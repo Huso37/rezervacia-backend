@@ -1,18 +1,31 @@
 from flask import Blueprint, request, jsonify
 from db import get_db_connection
+import pymysql
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
+    connection = None
+    cursor = None
     try:
         # Get JSON data from the request
         data = request.json
-        username = data['username']
-        email = data['email']
-        password = data['password']
+        username = data.get('username')
+        email = data.get('email')
+        password = data.get('password')
         phone = data.get('phone', None)  # Optional field
         role = data.get('role', 'user')  # Default role is 'user'
+
+        # Validate required fields
+        if not all([username, email, password]):
+            return jsonify({"error": "Missing required fields"}), 400
+
+        # Log received data for debugging
+        logging.debug(f"Registering user: {username}, {email}, {phone}, {role}")
 
         # Insert data into the database
         connection = get_db_connection()
@@ -26,19 +39,23 @@ def register():
 
         return jsonify({"message": "User registered successfully!"}), 201
     except pymysql.IntegrityError as e:
+        logging.error(f"Integrity error: {e}")
         if "Duplicate entry" in str(e):
             if "username" in str(e):
-                return jsonify({"error": "Username already exists!"}), 400
+                return jsonify({"error": "Zvolené username sa už používa!"}), 400
             if "email" in str(e):
-                return jsonify({"error": "Email already exists!"}), 400
+                return jsonify({"error": "Zvolený email sa už používa!"}), 400
             if "phone" in str(e):
-                return jsonify({"error": "Phone number already exists!"}), 400
-        return jsonify({"error": "Integrity error occurred!"}), 400
+                return jsonify({"error": "Zvolené telefónné číslo sa už používa!"}), 400
+        return jsonify({"error": "Database integrity error occurred!"}), 400
     except Exception as e:
+        logging.error(f"Unexpected error: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
-        cursor.close()
-        connection.close()
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
